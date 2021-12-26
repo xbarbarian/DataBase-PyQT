@@ -5,17 +5,18 @@ import json
 import logging
 import select
 import time
+import threading
 import logs.config_server_log
 from errors import IncorrectDataRecivedError
 from common.variables import *
 from common.utils import *
 from decos import log
-from descrptrs import Port
-from metaclasses import ServerVerifier
+from descrpts import Port, Addr
+from metaclasses import ServerMaker
+from server_database import ServerStorage
 
 # Инициализация логирования сервера.
 logger = logging.getLogger('server')
-
 
 # Парсер аргументов коммандной строки.
 @log
@@ -26,13 +27,15 @@ def arg_parser():
     namespace = parser.parse_args(sys.argv[1:])
     listen_address = namespace.a
     listen_port = namespace.p
+
     return listen_address, listen_port
 
-# Основной класс сервера
-class Server(metaclass=ServerVerifier):
-    port = Port()
 
-    def __init__(self, listen_address, listen_port):
+class Server(threading.Thread,metaclass=ServerMaker):
+    port = Port()
+    addr = Addr()
+
+    def __init__(self, listen_address, listen_port,database):
         # Параментры подключения
         self.addr = listen_address
         self.port = listen_port
@@ -40,13 +43,21 @@ class Server(metaclass=ServerVerifier):
         # Список подключённых клиентов.
         self.clients = []
 
+        # База данных сервера
+        self.database = database
+
         # Список сообщений на отправку.
         self.messages = []
 
         # Словарь содержащий сопоставленные имена и соответствующие им сокеты.
         self.names = dict()
 
+
+        # Конструктор предка
+        super().__init__()
+
     def init_socket(self):
+        """Запуск сервера на порту"""
         logger.info(
             f'Запущен сервер, порт для подключений: {self.port} , адрес с которого принимаются подключения: {self.addr}. Если адрес не указан, принимаются соединения с любых адресов.')
         # Готовим сокет
@@ -54,12 +65,12 @@ class Server(metaclass=ServerVerifier):
         transport.bind((self.addr, self.port))
         transport.settimeout(0.5)
 
-        # Начинаем слушать сокет.
+        # Начинаем слушать сокет
         self.sock = transport
-        self.sock.listen()
+        self.sock.listen(MAX_CONNECTIONS)
 
-    def main_loop(self):
-        # Инициализация Сокета
+    def run(self):
+        """Ожидания подключения клиента"""
         self.init_socket()
 
         # Основной цикл программы сервера
@@ -93,18 +104,18 @@ class Server(metaclass=ServerVerifier):
                         self.clients.remove(client_with_message)
 
             # Если есть сообщения, обрабатываем каждое.
-            for message in self.messages:
+            for messages in self.messages:
                 try:
-                    self.process_message(message, send_data_lst)
+                    self.process_message(messages, send_data_lst)
                 except:
-                    logger.info(f'Связь с клиентом с именем {message[DESTINATION]} была потеряна')
-                    self.clients.remove(self.names[message[DESTINATION]])
-                    del self.names[message[DESTINATION]]
+                    logger.info(f'Связь с клиентом с именем {messages[DESTINATION]} была потеряна')
+                    self.clients.remove(self.names[messages[DESTINATION]])
+                    del self.names[messages[DESTINATION]]
             self.messages.clear()
 
-    # Функция адресной отправки сообщения определённому клиенту. Принимает словарь сообщение, список зарегистрированых
-    # пользователей и слушающие сокеты. Ничего не возвращает.
     def process_message(self, message, listen_socks):
+        """  Функция адресной отправки сообщения определённому клиенту. Принимает словарь сообщение, список зарегистрированых
+             пользователей и слушающие сокеты. Ничего не возвращает."""
         if message[DESTINATION] in self.names and self.names[message[DESTINATION]] in listen_socks:
             send_message(self.names[message[DESTINATION]], message)
             logger.info(f'Отправлено сообщение пользователю {message[DESTINATION]} от пользователя {message[SENDER]}.')
@@ -114,15 +125,17 @@ class Server(metaclass=ServerVerifier):
             logger.error(
                 f'Пользователь {message[DESTINATION]} не зарегистрирован на сервере, отправка сообщения невозможна.')
 
-    # Обработчик сообщений от клиентов, принимает словарь - сообщение от клиента, проверяет корректность, отправляет
-    #     словарь-ответ в случае необходимости.
     def process_client_message(self, message, client):
+        """ Обработчик сообщений от клиентов, принимает словарь - сообщение от клиента, проверяет корректность, отправляет
+             словарь-ответ в случае необходимости."""
         logger.debug(f'Разбор сообщения от клиента : {message}')
         # Если это сообщение о присутствии, принимаем и отвечаем
         if ACTION in message and message[ACTION] == PRESENCE and TIME in message and USER in message:
             # Если такой пользователь ещё не зарегистрирован, регистрируем, иначе отправляем ответ и завершаем соединение.
             if message[USER][ACCOUNT_NAME] not in self.names.keys():
                 self.names[message[USER][ACCOUNT_NAME]] = client
+                client_ip, client_port = client.getpeername()
+                self.database.user_login(message[USER][ACCOUNT_NAME], client_ip, client_port)
                 send_message(client, RESPONSE_200)
             else:
                 response = RESPONSE_400
@@ -138,6 +151,7 @@ class Server(metaclass=ServerVerifier):
             return
         # Если клиент выходит
         elif ACTION in message and message[ACTION] == EXIT and ACCOUNT_NAME in message:
+            self.database.user_logout(message[ACCOUNT_NAME])
             self.clients.remove(self.names[ACCOUNT_NAME])
             self.names[ACCOUNT_NAME].close()
             del self.names[ACCOUNT_NAME]
@@ -149,15 +163,50 @@ class Server(metaclass=ServerVerifier):
             send_message(client, response)
             return
 
+def print_help():
+    print('Поддерживаемые комманды:')
+    print('users - список известных пользователей')
+    print('connected - список подключенных пользователей')
+    print('loghist - история входов пользователя')
+    print('exit - завершение работы сервера.')
+    print('help - вывод справки по поддерживаемым командам')
+
 
 def main():
-    # Загрузка параметров командной строки, если нет параметров, то задаём значения по умоланию.
+    """ Загрузка параметров командной строки, если нет параметров, то задаём значения по умоланию. """
     listen_address, listen_port = arg_parser()
 
-    # Создание экземпляра класса - сервера.
-    server = Server(listen_address, listen_port)
-    server.main_loop()
+    # Инициализация базы данных
+    database = ServerStorage()
 
+    # Создание экземпляра класса - сервера.
+    server = Server(listen_address, listen_port,database)
+    server.daemon = True
+    server.start()
+
+    # Печатаем справку:
+    print_help()
+
+    # Основной цикл сервера:
+    while True:
+        command = input('Введите комманду: ')
+        if command == 'help':
+            print_help()
+        elif command == 'exit':
+            break
+        elif command == 'users':
+            for user in sorted(database.users_list()):
+                print(f'Пользователь {user[0]}, последний вход: {user[1]}')
+        elif command == 'connected':
+            for user in sorted(database.active_users_list()):
+                print(f'Пользователь {user[0]}, подключен: {user[1]}:{user[2]}, время установки соединения: {user[3]}')
+        elif command == 'loghist':
+            name = input(
+                'Введите имя пользователя для просмотра истории. Для вывода всей истории, просто нажмите Enter: ')
+            for user in sorted(database.login_history(name)):
+                print(f'Пользователь: {user[0]} время входа: {user[1]}. Вход с: {user[2]}:{user[3]}')
+        else:
+            print('Команда не распознана.')
 
 if __name__ == '__main__':
     main()
