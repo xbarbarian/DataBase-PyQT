@@ -6,13 +6,13 @@ import threading
 import configparser
 from common.utils import *
 from common.decos import log
-from descrpts import Port, Addr
+from descrpts import Port
 from metaclasses import ServerMaker
 from server_database import ServerStorage
 
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtCore import QTimer
-from server_gui import MainWindow, gui_create_model, HistoryWindow, ConfigWindow
+from server_gui import MainWindow, gui_create_model, HistoryWindow, create_stat_model, ConfigWindow
 
 # Инициализация логирования сервера.
 logger = logging.getLogger('server')
@@ -38,7 +38,7 @@ def arg_parser(default_port, default_address):
 
 class Server(threading.Thread, metaclass=ServerMaker):
     port = Port()
-    addr = Addr()
+    # addr = Addr()
 
     def __init__(self, listen_address, listen_port, database):
         # Параментры подключения
@@ -122,7 +122,6 @@ class Server(threading.Thread, metaclass=ServerMaker):
              пользователей и слушающие сокеты. Ничего не возвращает."""
         if message[DESTINATION] in self.names and self.names[message[DESTINATION]] in listen_socks:
             send_message(self.names[message[DESTINATION]], message)
-            # self.database.process_message(message, listen_socks)
             logger.info(f'Отправлено сообщение пользователю {message[DESTINATION]} от пользователя {message[SENDER]}.')
         elif message[DESTINATION] in self.names and self.names[message[DESTINATION]] not in listen_socks:
             raise ConnectionError
@@ -156,7 +155,8 @@ class Server(threading.Thread, metaclass=ServerMaker):
         elif ACTION in message and message[ACTION] == MESSAGE and DESTINATION in message and TIME in message \
                 and SENDER in message and MESSAGE_TEXT in message and self.names[message[SENDER]] == client:
             self.messages.append(message)
-            self.database.process_message(message[SENDER], message[DESTINATION])
+            self.database.process_message(
+                message[SENDER], message[DESTINATION])
             return
         # Если клиент выходит
         elif ACTION in message and message[ACTION] == EXIT and ACCOUNT_NAME in message \
@@ -229,18 +229,18 @@ def main():
 
     # Инициализируем параметры в окна
     main_window.statusBar().showMessage('Server Working')
-    main_window.active_client_table.setModel(gui_create_model(database))
-    main_window.active_client_table.resizeColumnsToContents()
-    main_window.active_client_table.resizeRowsToContents()
+    main_window.active_clients_table.setModel(gui_create_model(database))
+    main_window.active_clients_table.resizeColumnsToContents()
+    main_window.active_clients_table.resizeRowsToContents()
 
     # Функция обновляющяя список подключённых, проверяет флаг подключения, и
     # если надо обновляет список
     def list_update():
         global new_connection
         if new_connection:
-            main_window.active_client_table.setModel(gui_create_model(database))
-            main_window.active_client_table.resizeColumnsToContents()
-            main_window.active_client_table.resizeRowsToContents()
+            main_window.active_clients_table.setModel(gui_create_model(database))
+            main_window.active_clients_table.resizeColumnsToContents()
+            main_window.active_clients_table.resizeRowsToContents()
             with conflag_lock:
                 new_connection = False
 
@@ -248,7 +248,7 @@ def main():
     def show_statistics():
         global stat_window
         stat_window = HistoryWindow()
-        stat_window.history_table.setModel(gui_create_model(database))
+        stat_window.history_table.setModel(create_stat_model(database))
         stat_window.history_table.resizeColumnsToContents()
         stat_window.history_table.resizeRowsToContents()
         stat_window.show()

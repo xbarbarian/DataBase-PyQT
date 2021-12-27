@@ -1,16 +1,15 @@
 import sys
 from PyQt5.QtWidgets import QMainWindow, QAction, qApp, QApplication, QLabel, QTableView, QDialog, QPushButton, \
-    QLineEdit, QFileDialog, QMessageBox, QDesktopWidget
+    QLineEdit, QFileDialog, QMessageBox
 from PyQt5.QtGui import QStandardItemModel, QStandardItem
 from PyQt5.QtCore import Qt
 import os
 
-
 # GUI - Создание таблицы QModel, для отображения в окне программы.
 def gui_create_model(database):
     list_users = database.active_users_list()
-    list_q = QStandardItemModel()
-    list_q.setHorizontalHeaderLabels(['Имя Клиента', 'IP Адрес', 'Порт', 'Время подключения'])
+    list = QStandardItemModel()
+    list.setHorizontalHeaderLabels(['Имя Клиента', 'IP Адрес', 'Порт', 'Время подключения'])
     for row in list_users:
         user, ip, port, time = row
         user = QStandardItem(user)
@@ -22,18 +21,9 @@ def gui_create_model(database):
         # Уберём милисекунды из строки времени, т.к. такая точность не требуется.
         time = QStandardItem(str(time.replace(microsecond=0)))
         time.setEditable(False)
-        list_q.appendRow([user, ip, port, time])
-    return list_q
+        list.appendRow([user, ip, port, time])
+    return list
 
-#Получаем центр экрана
-def get_screen(self):
-
-    screen = QDesktopWidget().screenGeometry()
-    x = int((screen.width() - self.width()) / 2)
-    y = int((screen.height() - self.height()) / 2)
-    return { 'x':x,
-             'y':y
-    }
 
 # GUI - Функция реализующая заполнение таблицы историей сообщений.
 def create_stat_model(database):
@@ -56,7 +46,6 @@ def create_stat_model(database):
         recvd.setEditable(False)
         list.appendRow([user, last_seen, sent, recvd])
     return list
-
 
 # Класс основного окна
 class MainWindow(QMainWindow):
@@ -103,16 +92,12 @@ class MainWindow(QMainWindow):
         self.label.move(10, 25)
 
         # Окно со списком подключенных клиентов.
-        self.active_client_table = QTableView(self)
-        self.active_client_table.move(10, 45)
-        self.active_client_table.setFixedSize(780, 400)
+        self.active_clients_table = QTableView(self)
+        self.active_clients_table.move(10, 45)
+        self.active_clients_table.setFixedSize(780, 400)
 
         self.show()
-        # self.move(**get_screen(self))
 
-        screen = QDesktopWidget().screenGeometry()
-        x = int((screen.width() - self.width()) / 2)
-        y = int((screen.height() - self.height()) / 2)
 
 # Класс окна с историей пользователей
 class HistoryWindow(QDialog):
@@ -140,11 +125,6 @@ class HistoryWindow(QDialog):
 
         self.show()
 
-        # screen = QDesktopWidget().screenGeometry()
-        # x = int((screen.width() - self.width()) / 2)
-        # y = int((screen.height() - self.height()) / 2)
-        # self.move(x, y)
-
 
 # Класс окна настроек
 class ConfigWindow(QDialog):
@@ -160,7 +140,7 @@ class ConfigWindow(QDialog):
         self.setFixedSize(365, 260)
 
         # Надпись о файле базы данных
-        self.db_path_label = QLabel('Путь до файла базы данных', self)
+        self.db_path_label = QLabel('Путь до файла базы данных',self)
         self.db_path_label.move(10, 10)
         self.db_path_label.setFixedSize(240, 15)
 
@@ -229,11 +209,6 @@ class ConfigWindow(QDialog):
         self.close_button.clicked.connect(self.close)
 
         self.show()
-
-        # screen = QDesktopWidget().screenGeometry()
-        # x = int((screen.width() - self.width()) / 2)
-        # y = int((screen.height() - self.height()) / 2)
-        # self.move(x, y)
 
 
 if __name__ == '__main__':
