@@ -28,9 +28,9 @@ class Addr:
         if value:
             try:
                 ip = ipaddress.ip_address(value)
-            except ValueError as e:
+            except ValueError:
                 logger.critical(
-                    f'Попытка запуска сервера с указанием неподходящего ip {e}')
+                    f'Попытка запуска сервера с указанием неподходящего адреса {value}.')
                 exit(1)
         # Если порт прошел проверку, добавляем его в список атрибутов экземпляра
         instance.__dict__[self.name] = value

@@ -28,7 +28,7 @@ class DocMeta(type):
 
 
 
-class Test(metaclass=DocMeta):
+class Test():
 
     def teds(self):
         pass
@@ -64,8 +64,8 @@ class Work():
 ans = Work(10)
 print(ans)
 
-ans1= Test(a=1,b=2)
-print(ans1)
+# ans1= Test(a=1,b=2)
+# print(ans1)
 
 
 
